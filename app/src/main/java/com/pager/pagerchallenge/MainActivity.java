@@ -1,5 +1,6 @@
 package com.pager.pagerchallenge;
 
+import android.arch.lifecycle.ViewModelProviders;
 import android.content.Context;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
@@ -13,26 +14,20 @@ import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.TextView;
 
-import com.jakewharton.retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory;
-import com.squareup.moshi.Moshi.Builder;
-
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 
 import butterknife.BindView;
 import butterknife.ButterKnife;
-import io.reactivex.android.schedulers.AndroidSchedulers;
-import io.reactivex.disposables.CompositeDisposable;
-import io.reactivex.schedulers.Schedulers;
-import okhttp3.OkHttpClient;
-import retrofit2.Retrofit;
-import retrofit2.converter.moshi.MoshiConverterFactory;
 
 public class MainActivity extends AppCompatActivity {
 
   @BindView(R.id.list_content)
   RecyclerView recyclerView;
+
+  UsersViewModel viewModel;
+  List<User> teamResponses = new ArrayList<>();
+  ListAdapter adapter;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -40,35 +35,27 @@ public class MainActivity extends AppCompatActivity {
     setContentView(R.layout.activity_main);
     ButterKnife.bind(this);
 
-    Retrofit retrofit = new Retrofit.Builder().baseUrl("https://pager-team.herokuapp.com/")
-            .addCallAdapterFactory(RxJava2CallAdapterFactory.create())
-            .addConverterFactory(MoshiConverterFactory.create()).build();
-    CompositeDisposable disposable = new CompositeDisposable();
-    RealTeamRepository realTeamRepository = new RealTeamRepository(retrofit);
-    RealGetUsersUseCase useCase =
-            new RealGetUsersUseCase(new HttpRolesRepository(retrofit), realTeamRepository,
-                    new SocketRepository("http://ios-hiring-backend.dokku.canillitapp.com", new OkHttpClient(),
-                            new Builder().build()));
-
-    List<User> teamResponses = new ArrayList<>();
-    ListAdapter adapter = new ListAdapter(getApplicationContext(), teamResponses, realTeamRepository);
+    adapter = new ListAdapter(getApplicationContext(), teamResponses);
     recyclerView.setAdapter(adapter);
     recyclerView.setLayoutManager(new LinearLayoutManager(getApplicationContext()));
-    HashMap<String, User> map = new HashMap<>();
 
-    disposable.add(
-      useCase.exec().subscribeOn(Schedulers.computation()).observeOn(AndroidSchedulers.mainThread())
-        .subscribe(user -> {
-          if(user.status().isEmpty()) {
-            map.put(user.name(), user);
-          } else {
-            map.put(user.name(), user);
-          }
-          teamResponses.clear();
-          teamResponses.addAll(map.values());
-          adapter.notifyDataSetChanged();
-          },
-          throwable -> Log.v("Error", throwable.toString())));
+    viewModel = ViewModelProviders.of(this).get(UsersViewModel.class);
+  }
+
+  @Override
+  protected void onResume() {
+    super.onResume();
+    viewModel.getUsers().observe(this,
+            users -> {
+      if(users != null) {
+        Log.v("MainActivity", "size: "+users.size());
+        teamResponses.clear();
+        teamResponses.addAll(users);
+        adapter.notifyDataSetChanged();
+      } else {
+        Log.v("MainActivity", "NULL");
+      }
+    });
   }
 
   /**
@@ -78,12 +65,10 @@ public class MainActivity extends AppCompatActivity {
 
     private List<User> teamUsers = null;
     Context context;
-    RealTeamRepository realTeamRepository;
 
-    ListAdapter(Context context, List<User> teamUsers, RealTeamRepository realTeamRepository) {
+    ListAdapter(Context context, List<User> teamUsers) {
       this.context = context;
       this.teamUsers = teamUsers;
-      this.realTeamRepository = realTeamRepository;
     }
 
     @Override
